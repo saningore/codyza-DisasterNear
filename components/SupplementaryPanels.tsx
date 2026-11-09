@@ -25,8 +25,8 @@ export default function SupplementaryPanels({ report }: { report: HazardReport }
         {report.earthquakesOmitted ? <p className="mt-3 text-sm">{report.earthquakesOmitted} USGS events were not listed because their type was not earthquake.</p> : null}
         <div className="mt-4 space-y-3">
           {report.earthquakes.map((quake) => (
-            <article key={quake.id} data-quake="true" className="rounded-2xl border border-line bg-card p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-sea">USGS earthquake catalog</p>
+            <article key={quake.id} data-quake="true" className="rounded-2xl border border-line bg-[#f7f8f4] p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-sea">USGS earthquake catalog · not an NWS warning</p>
               <h4 className="mt-1 font-serif text-xl font-semibold">{quake.place ?? "Place was not included."}</h4>
               <dl className="mt-3 space-y-1 text-sm">
                 <div><dt className="inline font-bold">Magnitude: </dt><dd className="inline">{quake.magnitude === null ? "Magnitude was not included." : `${quake.magnitude}${quake.magType ? ` ${quake.magType}` : ""}`}</dd></div>
@@ -50,8 +50,8 @@ export default function SupplementaryPanels({ report }: { report: HazardReport }
         {report.declarationsTruncated ? <p className="mt-3 text-sm">20 designated areas are shown. OpenFEMA can list one disaster once per county.</p> : null}
         <div className="mt-4 space-y-3">
           {report.declarations.map((item) => (
-            <article key={`${item.disasterNumber}-${item.designatedArea ?? "area"}`} data-declaration="true" className="rounded-2xl border border-line bg-card p-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-sea">FEMA disaster declaration</p>
+            <article key={`${item.disasterNumber}-${item.designatedArea ?? "area"}`} data-declaration="true" className="rounded-2xl border border-dashed border-line bg-[#f3f0e8] p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-ink/70">FEMA declaration · recovery record, not an urgent weather warning</p>
               <h4 className="mt-1 font-serif text-xl font-semibold">{item.title ?? "Title was not included by FEMA."}</h4>
               <dl className="mt-3 space-y-1 text-sm">
                 <div><dt className="inline font-bold">Declaration type: </dt><dd className="inline">{item.declarationType ?? "Not included"}{item.declarationTypeLabel ? ` — ${item.declarationTypeLabel}` : ""}</dd></div>

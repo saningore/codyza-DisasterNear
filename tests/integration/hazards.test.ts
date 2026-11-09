@@ -24,10 +24,38 @@ describe("hazard loading", () => {
     expect(report.alerts).toHaveLength(1);
     expect(report.alerts[0]?.event).toBe("Tornado Warning");
     expect(report.alerts[0]?.relation).toBe("outside");
+    expect(report.alerts[0]?.scope).toBe("point");
+    expect(report.zoneNote).toBeNull();
     expect(report.alerts[0]?.senderName).toBe("NWS Norman OK");
     expect(report.declarations.map((item) => item.title)).toEqual(["HURRICANE TEST"]);
     expect(report.alerts.some((alert) => alert.event === "HURRICANE TEST")).toBe(false);
     expect(report.sources.map((source) => source.status)).toEqual(["ok", "empty", "ok"]);
+  });
+
+  it("keeps a zone warning that misses the coordinate out of the at-point list", async () => {
+    stub((url) => {
+      if (url.includes("/points/")) return json(points());
+      if (url.includes("/alerts/active?point=")) return json({ features: [] });
+      if (url.includes("/alerts/active?zone=")) {
+        expect(url).toContain("zone=OKZ025,OKC109");
+        return json({ features: [tornado()] });
+      }
+      if (url.includes("earthquake.usgs.gov")) return new Response(null, { status: 204 });
+      if (url.includes("fema.gov")) return json({ DisasterDeclarationsSummaries: [] });
+      return json({}, 404);
+    });
+    const report = await loadHazards({
+      label: "Oklahoma City, OK",
+      latitude: 35.4676,
+      longitude: -97.5164,
+      precision: "place",
+    });
+    expect(report.alerts).toHaveLength(1);
+    expect(report.alerts[0]?.scope).toBe("zone");
+    expect(report.alerts[0]?.relation).toBe("outside");
+    expect(report.alerts[0]?.event).toBe("Tornado Warning");
+    expect(report.sources.find((source) => source.id === "nws")?.status).toBe("ok");
+    expect(report.zoneNote).toBeNull();
   });
 
   it("does not invent alerts when the National Weather Service fails", async () => {
@@ -105,6 +133,8 @@ function points() {
     properties: {
       timeZone: "America/Chicago",
       forecastOffice: "https://api.weather.gov/offices/OUN",
+      forecastZone: "https://api.weather.gov/zones/forecast/OKZ025",
+      county: "https://api.weather.gov/zones/county/OKC109",
       relativeLocation: { properties: { city: "Oklahoma City", state: "OK" } },
     },
   };

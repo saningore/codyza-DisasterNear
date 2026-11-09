@@ -93,8 +93,33 @@ export function normalizeFeature(
     geometry,
     relation,
     relationChecked,
+    scope: "point",
     group: hazardGroup(event),
   };
+}
+
+export function mergeAlertFeeds(
+  pointFeatures: unknown[],
+  zoneFeatures: unknown[],
+  point: { latitude: number; longitude: number },
+): { active: OfficialAlert[]; cancellations: OfficialAlert[]; quarantined: OfficialAlert[] } {
+  const fromPoint = normalizeAlerts(pointFeatures, point);
+  const fromZone = normalizeAlerts(zoneFeatures, point);
+  const pointIds = new Set(
+    flatten(fromPoint).map((alert) => alert.id).filter((id): id is string => Boolean(id)),
+  );
+  const merged = [
+    ...flatten(fromPoint).map((alert) => ({ ...alert, scope: "point" as const })),
+    ...flatten(fromZone).flatMap((alert) => {
+      if (alert.id && pointIds.has(alert.id)) return [];
+      return [{ ...alert, scope: alert.relation === "inside" ? "point" as const : "zone" as const }];
+    }),
+  ];
+  return partitionAlerts(merged);
+}
+
+function flatten(groups: { active: OfficialAlert[]; cancellations: OfficialAlert[]; quarantined: OfficialAlert[] }): OfficialAlert[] {
+  return [...groups.active, ...groups.cancellations, ...groups.quarantined];
 }
 
 export function normalizeAlerts(

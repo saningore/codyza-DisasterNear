@@ -59,6 +59,7 @@ export default async function AlertPage({
     );
   }
   const alert = normalizeFeature(result.value, point);
+  if (alert && alert.relation !== "inside" && first(query.scope) === "zone") alert.scope = "zone";
   if (!alert) {
     return (
       <article className="mx-auto max-w-3xl px-4 py-12">

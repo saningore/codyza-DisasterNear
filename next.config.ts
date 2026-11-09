@@ -16,6 +16,10 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
         ],
       },
+      {
+        source: "/sw.js",
+        headers: [{ key: "Cache-Control", value: "no-cache" }],
+      },
     ];
   },
 };

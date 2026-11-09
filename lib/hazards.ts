@@ -1,4 +1,4 @@
-import { normalizeAlerts } from "@/lib/alerts";
+import { mergeAlertFeeds } from "@/lib/alerts";
 import {
   FEMA_EMPTY,
   FEMA_NO_STATE,
@@ -7,11 +7,13 @@ import {
   NWS_UNCHECKED,
   USGS_EMPTY,
   USGS_UNCHECKED,
+  ZONE_NOTE_FAILED,
+  ZONE_NOTE_UNAVAILABLE,
 } from "@/lib/copy";
 import { stateForPoint } from "@/lib/geocode";
 import { nwsForecastPage } from "@/lib/links";
 import { femaDeclarations } from "@/lib/fema";
-import { nwsActiveFeatures, nwsPoints } from "@/lib/nws";
+import { nwsActiveFeatures, nwsPoints, nwsZoneFeatures } from "@/lib/nws";
 import { usgsEarthquakes } from "@/lib/usgs";
 import { EARTHQUAKE_WINDOW, type HazardReport, type Precision, type SourceReport } from "@/lib/types";
 
@@ -27,6 +29,12 @@ export async function loadHazards(input: {
     nwsActiveFeatures(input.latitude, input.longitude),
     usgsEarthquakes(input.latitude, input.longitude),
   ]);
+  const zone = points.ok && points.value.zoneIds.length
+    ? await nwsZoneFeatures(points.value.zoneIds)
+    : { ok: true as const, value: [] as unknown[] };
+  const zoneNote = alerts.ok
+    ? zoneNoteFor(points.ok, points.ok ? points.value.zoneIds.length : 0, zone.ok)
+    : null;
 
   let state = points.ok ? points.value.state : null;
   if (!state) state = await stateForPoint(input.latitude, input.longitude);
@@ -35,7 +43,7 @@ export async function loadHazards(input: {
     : { ok: false as const, message: FEMA_NO_STATE };
 
   const partitioned = alerts.ok
-    ? normalizeAlerts(alerts.value, { latitude: input.latitude, longitude: input.longitude })
+    ? mergeAlertFeeds(alerts.value, zone.ok ? zone.value : [], { latitude: input.latitude, longitude: input.longitude })
     : { active: [], cancellations: [], quarantined: [] };
 
   const sources: SourceReport[] = [
@@ -57,6 +65,7 @@ export async function loadHazards(input: {
     officeId: points.ok ? points.value.officeId : null,
     forecastPage: nwsForecastPage(input.latitude, input.longitude),
     gridNote: points.ok ? null : points.message,
+    zoneNote,
     retrievedAt,
     alerts: partitioned.active,
     cancellations: partitioned.cancellations,
@@ -68,6 +77,12 @@ export async function loadHazards(input: {
     sources,
     earthquakeWindow: { ...EARTHQUAKE_WINDOW },
   };
+}
+
+function zoneNoteFor(pointsOk: boolean, zoneCount: number, zoneOk: boolean): string | null {
+  if (!pointsOk || zoneCount === 0) return ZONE_NOTE_UNAVAILABLE;
+  if (!zoneOk) return ZONE_NOTE_FAILED;
+  return null;
 }
 
 function nwsSource(

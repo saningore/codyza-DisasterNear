@@ -3,15 +3,25 @@ export function formatOfficialTime(iso: string | null, timeZone: string | null):
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   const zone = timeZone || "UTC";
+  const formatted = formatInZone(date, zone);
+  if (formatted) return formatted;
+  const utc = formatInZone(date, "UTC");
+  return utc ?? `${iso} UTC`;
+}
+
+function formatInZone(date: Date, timeZone: string): string | null {
   try {
     return new Intl.DateTimeFormat("en-US", {
-      timeZone: zone,
-      dateStyle: "medium",
-      timeStyle: "short",
+      timeZone,
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
       timeZoneName: "short",
     }).format(date);
   } catch {
-    return `${iso} UTC`;
+    return null;
   }
 }
 

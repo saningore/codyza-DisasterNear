@@ -75,7 +75,7 @@ export default function HazardMap({
           source: "alerts",
           paint: {
             "fill-color": ["match", ["get", "severity"], "Extreme", SEVERITY_COLOR.Extreme, "Severe", SEVERITY_COLOR.Severe, "Moderate", SEVERITY_COLOR.Moderate, "Minor", SEVERITY_COLOR.Minor, SEVERITY_COLOR.Unknown],
-            "fill-opacity": 0.33,
+            "fill-opacity": ["case", ["==", ["get", "scope"], "zone"], 0.16, 0.38],
           },
         });
         map.addLayer({
@@ -173,8 +173,9 @@ export default function HazardMap({
           <li key={name} className="rounded-full px-2 py-1 text-white" style={{ background: color }}>{name === "Unknown" ? "Unknown severity" : name}</li>
         ))}
         <li className="rounded-full bg-pine px-2 py-1 text-card">USGS earthquake</li>
+        <li className="rounded-full bg-card px-2 py-1 ring-1 ring-line">FEMA declarations are not drawn here</li>
       </ul>
-      <p className="mt-2 text-xs text-ink/70">Polygons appear only when the alert includes them. Map data © OpenStreetMap contributors, via OpenFreeMap.</p>
+      <p className="mt-2 text-xs text-ink/70">Polygons appear only when the alert includes them. A lighter polygon is an NWS zone alert that does not contain this point. Map data © OpenStreetMap contributors, via OpenFreeMap.</p>
     </div>
   );
 }

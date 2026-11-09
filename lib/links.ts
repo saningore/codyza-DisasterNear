@@ -61,6 +61,15 @@ export function femaDisasterUrl(disasterNumber: number): string | null {
   return `https://www.fema.gov/disaster/${disasterNumber}`;
 }
 
+export function nwsZoneId(value: unknown): string | null {
+  const safe = officialHttpUrl(value);
+  if (!safe) return null;
+  const url = new URL(safe);
+  if (url.hostname !== "api.weather.gov") return null;
+  const match = url.pathname.match(/^\/zones\/(?:forecast|county|fire)\/([A-Z]{3}\d{3})\/?$/);
+  return match ? match[1] : null;
+}
+
 export function officeIdFromUrl(value: unknown): string | null {
   const safe = officialHttpUrl(value);
   if (!safe) return null;

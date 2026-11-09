@@ -6,8 +6,8 @@ const SOURCES = [
   {
     name: "National Weather Service",
     href: "https://www.weather.gov/documentation/services-web-alerts",
-    use: "Active alerts for the latitude and longitude, requested with status=actual. The point query is how NWS returns alerts for the county and forecast zone that contain that coordinate. A separate /points request supplies the time zone, the forecast office, and the place name.",
-    limit: "A ZIP search uses the Census ZIP Code Tabulation Area center, so a warning polygon can cover part of the ZIP and miss the center. Some alerts include a polygon and some do not. This page draws a shape only when NWS included geometry. Messages marked Test, Exercise, System, or Draft are listed apart from actual alerts. Cancel messages are listed as cancellation notices.",
+    use: "Active alerts are requested two ways, both with status=actual. The point query asks NWS which alerts affect the coordinate. The /points response then supplies the forecast zone, county zone, and fire-weather zone, and a second query asks for active alerts in those zones. Each polygon is tested against the coordinate. A polygon that contains the point is shown as at this location. A zone alert whose polygon does not contain the point is shown apart, under the same NWS zone.",
+    limit: "A ZIP search starts at the Census ZIP Code Tabulation Area center. The zone query is what still returns a warning that covers part of the ZIP but not that center. The page does not invent a polygon when NWS omitted geometry. Messages marked Test, Exercise, System, or Draft are listed apart from actual alerts. Cancel messages are listed as cancellation notices.",
   },
   {
     name: "U.S. Geological Survey",
@@ -33,7 +33,7 @@ export default function SourcesPage() {
   return (
     <article className="mx-auto max-w-3xl px-4 py-10">
       <h1 className="font-serif text-4xl font-semibold">Where the information comes from</h1>
-      <p className="mt-4 text-lg">The browser talks only to this site. The server calls each source with the User-Agent DisasterNear/1.0 (https://codyza.com). Alert requests may be reused on the server for up to 30 seconds. The page does not store alert text on your device.</p>
+      <p className="mt-4 text-lg">The browser talks only to this site. The server calls each source with the User-Agent DisasterNear/1.0 (https://codyza.com). Upstream responses may be reused on the server for up to 30 seconds. The browser can keep the last check so the page opens offline. That copy is labeled with the time it was retrieved and is not presented as a new check.</p>
       <p className="mt-4">Wildfire perimeters, river gauges, and shelter inventories are not added here. A fire-weather or flood warning still appears when the National Weather Service issues one.</p>
       <div className="mt-8 space-y-6">
         {SOURCES.map((source) => (

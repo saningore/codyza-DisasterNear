@@ -41,13 +41,33 @@ export function precisionNote(precision: Precision): string {
   }
 }
 
-export function relationNote(relation: "inside" | "outside" | "none", checked: boolean): string {
+export const ZONE_ONLY = "No active alert contains this point. The National Weather Service did return alerts for the same forecast zone or county. Those are listed separately and do not mean this coordinate is inside the warning.";
+
+export const ZONE_NOTE_FAILED = "The NWS zone query could not be checked. A warning polygon that misses this point can be missing.";
+
+export const ZONE_NOTE_UNAVAILABLE = "The National Weather Service did not return a forecast zone or county for this point, so only the coordinate query was used.";
+
+export const NOTIFY_NOTE = "Browser notifications repeat the official NWS event name for new Severe or Extreme alerts at locations you turn on. They are not Wireless Emergency Alerts, and they are not sent for FEMA declarations or USGS earthquakes.";
+
+export const OFFLINE_COPY = "This is a saved check, not a new check. National Weather Service, USGS, and FEMA were not contacted again.";
+
+export function relationNote(
+  relation: "inside" | "outside" | "none",
+  checked: boolean,
+  scope: "point" | "zone" = "point",
+): string {
   if (!checked) {
     return "A polygon was included. Open this alert from a location search to see whether that point is inside it.";
   }
   if (relation === "inside") return "Your location is inside the official polygon.";
+  if (relation === "outside" && scope === "zone") {
+    return "Your location is outside the official polygon. NWS returned this alert for the same forecast zone or county, so it can cover another part of that zone, including part of a ZIP code.";
+  }
   if (relation === "outside") {
-    return "Your location is outside the official polygon. The alert was still returned for this point’s county or forecast zone.";
+    return "Your location is outside the official polygon. NWS still returned this alert for this coordinate.";
+  }
+  if (scope === "zone") {
+    return "This alert did not include a polygon. NWS returned it for the same forecast zone or county as this point, not because the coordinate was tested against a shape.";
   }
   return "This alert did not include a polygon. The area text is shown instead.";
 }

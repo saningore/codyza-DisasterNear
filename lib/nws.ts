@@ -1,6 +1,6 @@
 import { UpstreamError } from "@/lib/errors";
 import { fetchJson } from "@/lib/http";
-import { officeIdFromUrl } from "@/lib/links";
+import { nwsZoneId, officeIdFromUrl } from "@/lib/links";
 import { roundCoordinate } from "@/lib/geo";
 import { stateAbbreviation } from "@/lib/states";
 import { asRecord, textOrNull } from "@/lib/text";
@@ -12,6 +12,7 @@ export type PointsValue = {
   placeLabel: string | null;
   state: string | null;
   officeId: string | null;
+  zoneIds: string[];
 };
 
 export type SourceOutcome<T> =
@@ -39,6 +40,7 @@ export async function nwsPoints(latitude: number, longitude: number): Promise<So
         placeLabel: city ? (abbreviation ? `${city}, ${abbreviation}` : city) : null,
         state: abbreviation,
         officeId: officeIdFromUrl(properties?.forecastOffice),
+        zoneIds: uniqueZoneIds(properties),
       },
     };
   } catch (error) {
@@ -71,6 +73,31 @@ export async function nwsActiveFeatures(
     }
     return { ok: false, message: "The National Weather Service could not be checked." };
   }
+}
+
+export async function nwsZoneFeatures(zoneIds: string[]): Promise<SourceOutcome<unknown[]>> {
+  const ids = [...new Set(zoneIds)].filter((id) => /^[A-Z]{3}\d{3}$/.test(id)).slice(0, 3);
+  if (!ids.length) return { ok: true, value: [] };
+  try {
+    const response = await fetchJson(`${BASE}/alerts/active?zone=${ids.join(",")}&status=actual`);
+    if (response.status !== 200) {
+      return { ok: false, message: "The NWS zone query could not be checked." };
+    }
+    const features = asRecord(response.body)?.features;
+    if (!Array.isArray(features)) {
+      return { ok: false, message: "The NWS zone query could not be read." };
+    }
+    return { ok: true, value: features };
+  } catch {
+    return { ok: false, message: "The NWS zone query could not be checked." };
+  }
+}
+
+function uniqueZoneIds(properties: Record<string, unknown> | null): string[] {
+  const ids = [properties?.forecastZone, properties?.county, properties?.fireWeatherZone]
+    .map((value) => nwsZoneId(value))
+    .filter((id): id is string => Boolean(id));
+  return [...new Set(ids)];
 }
 
 export async function nwsAlertFeature(id: string): Promise<SourceOutcome<unknown>> {

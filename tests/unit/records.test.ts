@@ -67,6 +67,7 @@ function alert(geometry: OfficialAlert["geometry"]): OfficialAlert {
     geometry,
     relation: geometry ? "inside" : "none",
     relationChecked: true,
+    scope: "point",
     group: "Flood",
   };
 }

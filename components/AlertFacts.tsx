@@ -39,7 +39,7 @@ export default function AlertFacts({
     .filter((line): line is string => Boolean(line));
   const expired = isBefore(alert.expires, retrievedAt);
   const readable = showPageLink && alert.id
-    ? `/alerts/${encodeURIComponent(alert.id)}${latitude !== undefined && longitude !== undefined ? `?lat=${latitude}&lon=${longitude}` : ""}`
+    ? `/alerts/${encodeURIComponent(alert.id)}${latitude !== undefined && longitude !== undefined ? `?lat=${latitude}&lon=${longitude}${alert.scope === "zone" ? "&scope=zone" : ""}` : ""}`
     : null;
 
   return (
@@ -49,7 +49,7 @@ export default function AlertFacts({
       <Fact term="Urgency">{alert.urgency ?? NOT_INCLUDED}</Fact>
       <Fact term="Certainty">{alert.certainty ?? NOT_INCLUDED}</Fact>
       <Fact term="Area affected">{alert.areaDesc ?? NOT_INCLUDED}</Fact>
-      <Fact term="Map relationship">{relationNote(alert.relation, alert.relationChecked)}</Fact>
+      <Fact term="Map relationship">{relationNote(alert.relation, alert.relationChecked, alert.scope)}</Fact>
       <Fact term="Start time">{start.length ? start.join("\n") : NOT_INCLUDED}</Fact>
       <Fact term="Expiration / end">
         {end.length ? end.join("\n") : NOT_INCLUDED}

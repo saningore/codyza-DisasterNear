@@ -46,6 +46,7 @@ export type OfficialAlert = {
   geometry: OfficialGeometry | null;
   relation: PolygonRelation;
   relationChecked: boolean;
+  scope: "point" | "zone";
   group: HazardGroup;
 };
 
@@ -100,6 +101,7 @@ export type HazardReport = {
   officeId: string | null;
   forecastPage: string;
   gridNote: string | null;
+  zoneNote: string | null;
   retrievedAt: string;
   alerts: OfficialAlert[];
   cancellations: OfficialAlert[];

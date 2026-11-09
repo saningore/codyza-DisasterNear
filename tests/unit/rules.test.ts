@@ -1,10 +1,12 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { compareAlerts, hazardGroup, instructionText, normalizeAlerts, severityLabel } from "@/lib/alerts";
+import { compareAlerts, hazardGroup, instructionText, mergeAlertFeeds, normalizeAlerts, severityLabel } from "@/lib/alerts";
 import { EMPTY_ALERTS, NO_GUARANTEE, NO_INSTRUCTION } from "@/lib/copy";
 import { inSearchableArea } from "@/lib/geo";
-import { femaDisasterUrl, isAlertId, officialHttpUrl } from "@/lib/links";
+import { femaDisasterUrl, isAlertId, nwsZoneId, officialHttpUrl } from "@/lib/links";
+import { notificationCopy, unseenSevere } from "@/lib/monitor";
+import { formatOfficialTime } from "@/lib/time";
 import { rememberLocation } from "@/lib/map-data";
 import { polygonRelation } from "@/lib/polygon";
 import { resolveQuery } from "@/lib/geocode";
@@ -87,6 +89,27 @@ describe("official alert normalization", () => {
     expect(parsed.active[0]?.relationChecked).toBe(true);
   });
 
+  it("keeps a zone alert whose polygon misses the point and promotes one that contains it", () => {
+    const elsewhere = { type: "Polygon", coordinates: square(-80.3, 25.7, -80.1, 25.9) };
+    const around = { type: "Polygon", coordinates: square(-98, 35, -97, 36) };
+    const parsed = mergeAlertFeeds(
+      [],
+      [
+        feature({ id: "urn:oid:2.49.0.1.840.0.example010", event: "Tornado Warning" }, elsewhere),
+        feature({ id: "urn:oid:2.49.0.1.840.0.example011", event: "Flood Warning", severity: "Severe" }, around),
+      ],
+      { latitude: 35.47, longitude: -97.52 },
+    );
+    const tornado = parsed.active.find((alert) => alert.id === "urn:oid:2.49.0.1.840.0.example010");
+    const flood = parsed.active.find((alert) => alert.id === "urn:oid:2.49.0.1.840.0.example011");
+    expect(tornado?.scope).toBe("zone");
+    expect(tornado?.relation).toBe("outside");
+    expect(flood?.scope).toBe("point");
+    expect(flood?.relation).toBe("inside");
+    expect(notificationCopy(tornado!).body).toContain("outside the official polygon");
+    expect(notificationCopy(tornado!).title).toBe("Tornado Warning");
+  });
+
   it("dedupes by the official id and keeps the later message", () => {
     const parsed = normalizeAlerts([
       feature({ sent: "2026-11-08T12:00:00Z", headline: "First" }),
@@ -138,6 +161,9 @@ describe("links and places", () => {
     expect(femaDisasterUrl(0)).toBeNull();
     expect(isAlertId("urn:oid:2.49.0.1.840.0.example001")).toBe(true);
     expect(isAlertId("../etc")).toBe(false);
+    expect(nwsZoneId("https://api.weather.gov/zones/forecast/OKZ025")).toBe("OKZ025");
+    expect(nwsZoneId("https://api.weather.gov/zones/county/OKC109")).toBe("OKC109");
+    expect(nwsZoneId("https://evil.example/zones/forecast/OKZ025")).toBeNull();
   });
 
   it("resolves real ZIP centers and cities from the Census gazetteer", async () => {
@@ -161,6 +187,13 @@ describe("links and places", () => {
     expect(EMPTY_ALERTS).toBe("No matching active alerts were returned by the sources checked.");
     expect(NO_GUARANTEE).toContain("does not mean the area is completely safe");
     expect(NO_INSTRUCTION).toBe("This alert did not include an instruction.");
+    const formatted = formatOfficialTime("2026-11-09T22:03:00.349Z", "America/Puerto_Rico");
+    expect(formatted).toContain("Nov 9, 2026");
+    expect(formatted).not.toContain("2026-11-09T");
+    const severe = stub("Severe", "Immediate", "2026-11-08T12:00:00Z");
+    expect(unseenSevere([severe], [])).toHaveLength(1);
+    expect(unseenSevere([severe], [severe.id!])).toHaveLength(0);
+    expect(unseenSevere([stub("Minor", "Immediate", "2026-11-08T12:00:00Z")], [])).toHaveLength(0);
   });
 
   it("stores at most five locations and does not keep alert text", () => {
@@ -212,6 +245,7 @@ function stub(severity: string, urgency: string, sent: string): OfficialAlert {
     geometry: null,
     relation: "none",
     relationChecked: true,
+    scope: "point",
     group: "Other",
   };
 }

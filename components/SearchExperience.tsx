@@ -6,11 +6,13 @@ import AlertList from "@/components/AlertList";
 import HazardMap from "@/components/HazardMap";
 import SourceStatus from "@/components/SourceStatus";
 import SupplementaryPanels from "@/components/SupplementaryPanels";
-import { NO_GUARANTEE, precisionNote } from "@/lib/copy";
+import { readOfflineReport, readRecentReport, readSeenIds, samePoint, storeReport, writeSeenIds } from "@/lib/browser-store";
+import { NOTIFY_NOTE, NO_GUARANTEE, OFFLINE_COPY, precisionNote } from "@/lib/copy";
 import { nwsOfficeUrl } from "@/lib/links";
 import { rememberLocation, type SavedLocation } from "@/lib/map-data";
+import { notificationCopy, rememberSeen, unseenSevere } from "@/lib/monitor";
 import { formatOfficialTime } from "@/lib/time";
-import type { GeocodeHit, HazardReport, Precision } from "@/lib/types";
+import type { GeocodeHit, HazardReport, OfficialAlert, Precision } from "@/lib/types";
 
 const SAVED_KEY = "disasternear.saved";
 
@@ -32,20 +34,37 @@ export default function SearchExperience({ initial }: { initial: InitialQuery | 
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState("");
   const [refreshNote, setRefreshNote] = useState("");
+  const [fromCache, setFromCache] = useState(false);
+  const [notifyNote, setNotifyNote] = useState("");
   const [report, setReport] = useState<HazardReport | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [saved, setSaved] = useState<SavedLocation[]>([]);
   const requestId = useRef(0);
   const started = useRef(false);
   const reportRef = useRef<HazardReport | null>(null);
+  const savedRef = useRef<SavedLocation[]>([]);
+  const seenRef = useRef<string[]>([]);
+  const initialized = useRef(new Set<string>());
   reportRef.current = report;
+  savedRef.current = saved;
 
   const loadHazards = useCallback(async (hit: Pick<GeocodeHit, "label" | "latitude" | "longitude" | "precision">, reason: "search" | "refresh") => {
     const id = ++requestId.current;
     if (reason === "search") {
+      const recent = readRecentReport(hit);
+      if (recent) {
+        setReport(recent);
+        setFromCache(false);
+        setError("");
+        setLoading(false);
+        setLocating(false);
+        replaceUrl(hit);
+        return;
+      }
       setLoading(true);
       setError("");
       setRefreshNote("");
+      setFromCache(false);
       setActiveId(null);
     }
     const params = new URLSearchParams({
@@ -60,15 +79,22 @@ export default function SearchExperience({ initial }: { initial: InitialQuery | 
       if (id !== requestId.current) return;
       if (!response.ok) throw new Error(body.error || "Hazard information could not be loaded.");
       setReport(body);
-      if (reason === "search") {
-        router.replace(`/?${params.toString()}`, { scroll: false });
-      }
+      setFromCache(false);
+      storeReport(body);
+      observe(body);
+      if (reason === "search") replaceUrl(hit);
       setRefreshNote("");
     } catch (cause) {
       if (id !== requestId.current) return;
       const message = cause instanceof Error ? cause.message : "Hazard information could not be loaded.";
+      const cached = readOfflineReport(hit);
       if (reason === "refresh" && reportRef.current) {
-        setRefreshNote(`Could not refresh. Showing results retrieved at ${formatOfficialTime(reportRef.current.retrievedAt, reportRef.current.timeZone) ?? reportRef.current.retrievedAt}.`);
+        setFromCache(true);
+        setRefreshNote(`Could not refresh. Showing results retrieved at ${formatOfficialTime(reportRef.current.retrievedAt, reportRef.current.timeZone) ?? reportRef.current.retrievedAt}. ${OFFLINE_COPY}`);
+      } else if (cached) {
+        setReport(cached);
+        setFromCache(true);
+        setError("");
       } else {
         setError(message);
       }
@@ -77,6 +103,35 @@ export default function SearchExperience({ initial }: { initial: InitialQuery | 
         setLoading(false);
         setLocating(false);
       }
+    }
+    function replaceUrl(place: { label: string; latitude: number; longitude: number; precision: Precision }) {
+      const next = `/?${new URLSearchParams({
+        lat: String(place.latitude),
+        lon: String(place.longitude),
+        label: place.label,
+        precision: place.precision,
+      }).toString()}`;
+      if (`${window.location.pathname}${window.location.search}` !== next) {
+        router.replace(next, { scroll: false });
+      }
+    }
+
+    function observe(body: HazardReport) {
+      const watched = savedRef.current.some((item) => item.notify && samePoint(item, body.origin));
+      if (!watched) return;
+      const key = `${body.origin.latitude.toFixed(5)},${body.origin.longitude.toFixed(5)}`;
+      if (!initialized.current.has(key)) {
+        initialized.current.add(key);
+        seenRef.current = rememberSeen(seenRef.current, body.alerts);
+        writeSeenIds(seenRef.current);
+        postWatch();
+        return;
+      }
+      const fresh = unseenSevere(body.alerts, seenRef.current);
+      seenRef.current = rememberSeen(seenRef.current, body.alerts);
+      writeSeenIds(seenRef.current);
+      postWatch();
+      for (const alert of fresh) void showNotification(alert, body.origin);
     }
   }, [router]);
 
@@ -101,12 +156,25 @@ export default function SearchExperience({ initial }: { initial: InitialQuery | 
   }, [report, loadHazards]);
 
   useEffect(() => {
+    seenRef.current = readSeenIds();
     try {
       const parsed = JSON.parse(window.localStorage.getItem(SAVED_KEY) ?? "[]") as SavedLocation[];
       if (Array.isArray(parsed)) setSaved(parsed.slice(0, 5));
     } catch {
       setSaved([]);
     }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      const current = reportRef.current?.origin;
+      for (const item of savedRef.current) {
+        if (!item.notify || (current && samePoint(item, current))) continue;
+        void fetchQuiet(item);
+      }
+    }, 600_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -177,15 +245,85 @@ export default function SearchExperience({ initial }: { initial: InitialQuery | 
 
   function saveLocation() {
     if (!report) return;
-    const next = rememberLocation(saved, report.origin);
-    setSaved(next);
-    window.localStorage.setItem(SAVED_KEY, JSON.stringify(next));
+    persistSaved(rememberLocation(saved, report.origin));
   }
 
   function removeSaved(item: SavedLocation) {
-    const next = saved.filter((savedItem) => savedItem.label !== item.label || savedItem.latitude !== item.latitude);
+    persistSaved(saved.filter((savedItem) => !samePoint(savedItem, item)));
+  }
+
+  function persistSaved(next: SavedLocation[]) {
     setSaved(next);
+    savedRef.current = next;
     window.localStorage.setItem(SAVED_KEY, JSON.stringify(next));
+    postWatch(next);
+  }
+
+  async function toggleNotify() {
+    if (!report) return;
+    const current = saved.find((item) => samePoint(item, report.origin));
+    if (current?.notify) {
+      persistSaved(saved.map((item) => samePoint(item, report.origin) ? { ...item, notify: false } : item));
+      setNotifyNote("Notifications are off for this location.");
+      return;
+    }
+    if (!("Notification" in window)) {
+      setNotifyNote("This browser does not support notifications. The page still checks while it is open.");
+      return;
+    }
+    const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    if (permission !== "granted") {
+      setNotifyNote("Notification permission was denied. DisasterNear will not send a browser notification.");
+      return;
+    }
+    const next = rememberLocation(saved, { ...report.origin, notify: true });
+    const key = `${report.origin.latitude.toFixed(5)},${report.origin.longitude.toFixed(5)}`;
+    initialized.current.add(key);
+    seenRef.current = rememberSeen(seenRef.current, report.alerts);
+    writeSeenIds(seenRef.current);
+    persistSaved(next);
+    const background = await registerPeriodic();
+    setNotifyNote(background
+      ? "Notifications are on. Current Severe and Extreme alerts are marked as seen. A new official alert can notify this browser while the page is open, and in the background when the browser allows it."
+      : "Notifications are on while this page is open. Current Severe and Extreme alerts are marked as seen. This browser did not allow a background check.");
+  }
+
+  const watching = report ? saved.some((item) => item.notify && samePoint(item, report.origin)) : false;
+
+  function postWatch(list = savedRef.current) {
+    const locations = list.filter((item) => item.notify).slice(0, 5);
+    navigator.serviceWorker?.ready.then((registration) => {
+      registration.active?.postMessage({ type: "watch", locations, seen: seenRef.current });
+    }).catch(() => undefined);
+  }
+
+  async function fetchQuiet(item: SavedLocation) {
+    const params = new URLSearchParams({
+      lat: String(item.latitude),
+      lon: String(item.longitude),
+      label: item.label,
+      precision: item.precision,
+    });
+    try {
+      const response = await fetch(`/api/hazards?${params.toString()}`);
+      if (!response.ok) return;
+      const body = await response.json() as HazardReport;
+      const key = `${body.origin.latitude.toFixed(5)},${body.origin.longitude.toFixed(5)}`;
+      if (!initialized.current.has(key)) {
+        initialized.current.add(key);
+        seenRef.current = rememberSeen(seenRef.current, body.alerts);
+        writeSeenIds(seenRef.current);
+        postWatch();
+        return;
+      }
+      const fresh = unseenSevere(body.alerts, seenRef.current);
+      seenRef.current = rememberSeen(seenRef.current, body.alerts);
+      writeSeenIds(seenRef.current);
+      postWatch();
+      for (const alert of fresh) void showNotification(alert, body.origin);
+    } catch {
+      return;
+    }
   }
 
   const office = report ? nwsOfficeUrl(report.officeId) : null;
@@ -252,11 +390,11 @@ export default function SearchExperience({ initial }: { initial: InitialQuery | 
         {saved.length ? (
           <div className="mt-5">
             <h2 className="text-sm font-bold">Saved on this device</h2>
-            <p className="text-sm text-ink/70">Saved on this device only. Locations are not an account, and alerts are not stored.</p>
+            <p className="text-sm text-ink/70">Saved on this device only. This is not an account. The last check can stay on this device for offline viewing and is labeled with the time it was retrieved.</p>
             <ul className="mt-2 flex flex-wrap gap-2">
               {saved.map((item) => (
                 <li key={`${item.latitude}-${item.longitude}`} className="flex items-center gap-1 rounded-full bg-moss px-2 py-1">
-                  <button type="button" className="min-h-11 px-2 font-bold" onClick={() => void loadHazards(item, "search")}>{item.label}</button>
+                  <button type="button" className="min-h-11 px-2 font-bold" onClick={() => void loadHazards(item, "search")}>{item.label}{item.notify ? " · notifications on" : ""}</button>
                   <button type="button" className="min-h-11 px-2 text-sm" onClick={() => removeSaved(item)} aria-label={`Remove ${item.label}`}>Remove</button>
                 </li>
               ))}
@@ -276,10 +414,18 @@ export default function SearchExperience({ initial }: { initial: InitialQuery | 
                 <p className="mt-2 max-w-3xl">{precisionNote(report.origin.precision)}</p>
                 {report.placeLabel ? <p className="mt-2 text-sm">NWS location context, not an alert: {report.placeLabel}</p> : null}
                 {report.gridNote ? <p className="mt-2 text-sm">{report.gridNote} Times are shown in UTC.</p> : null}
-                <p className="mt-2 text-sm">This page asks the sources again every 2 minutes while it is open. It does not send push alerts.</p>
+                <p className="mt-2 text-sm">This page asks the sources again every 2 minutes while it is open. {NOTIFY_NOTE}</p>
+                {report.zoneNote ? <p className="mt-2 text-sm font-bold">{report.zoneNote}</p> : null}
               </div>
-              <button type="button" className="min-h-11 rounded-full border border-pine px-4 font-bold" onClick={saveLocation}>Save this location</button>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="min-h-11 rounded-full border border-pine px-4 font-bold" onClick={saveLocation}>Save this location</button>
+                <button type="button" className="min-h-11 max-w-full whitespace-normal rounded-full border border-clay px-4 text-left font-bold" onClick={() => void toggleNotify()}>
+                  {watching ? "Stop notifications for this location" : "Notify me about new Severe or Extreme alerts"}
+                </button>
+              </div>
             </div>
+            {notifyNote ? <p className="mt-3 text-sm font-bold">{notifyNote}</p> : null}
+            {fromCache ? <p className="mt-3 rounded-2xl bg-amber px-4 py-3 font-bold" role="status">Checked at {formatOfficialTime(report.retrievedAt, report.timeZone) ?? report.retrievedAt}. {OFFLINE_COPY}</p> : null}
             <div className="mt-4 flex flex-wrap gap-4 text-sm font-bold">
               {office ? <a className="text-sea underline underline-offset-2" href={office} target="_blank" rel="noopener noreferrer">Weather Forecast Office {report.officeId}</a> : null}
               <a className="text-sea underline underline-offset-2" href={report.forecastPage} target="_blank" rel="noopener noreferrer">Open the NWS forecast page for this point</a>
@@ -299,4 +445,40 @@ export default function SearchExperience({ initial }: { initial: InitialQuery | 
       </div>
     </div>
   );
+}
+
+async function showNotification(alert: OfficialAlert, origin: HazardReport["origin"]) {
+  const { title, body } = notificationCopy(alert);
+  const url = `/?${new URLSearchParams({
+    lat: String(origin.latitude),
+    lon: String(origin.longitude),
+    label: origin.label,
+    precision: origin.precision,
+  }).toString()}`;
+  try {
+    const registration = await navigator.serviceWorker?.ready;
+    if (registration) {
+      await registration.showNotification(title, { body, tag: alert.id ?? title, data: { url } });
+      return;
+    }
+  } catch {
+    // The page notification below is the fallback.
+  }
+  if (Notification.permission === "granted") new Notification(title, { body, tag: alert.id ?? title });
+}
+
+async function registerPeriodic(): Promise<boolean> {
+  try {
+    const registration = await navigator.serviceWorker?.ready;
+    const periodic = registration && "periodicSync" in registration
+      ? (registration as ServiceWorkerRegistration & {
+        periodicSync: { register: (tag: string, options: { minInterval: number }) => Promise<void> };
+      }).periodicSync
+      : null;
+    if (!periodic) return false;
+    await periodic.register("disasternear-nws", { minInterval: 15 * 60 * 1000 });
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -22,6 +22,7 @@ export function alertCollection(alerts: OfficialAlert[], activeId: string | null
           id: alert.id ?? "",
           event: alert.event ?? "Not included by NWS",
           severity: alert.severity ?? "Unknown",
+          scope: alert.scope,
           active: alert.id !== null && alert.id === activeId,
         },
       }];
@@ -84,10 +85,23 @@ export type SavedLocation = {
   latitude: number;
   longitude: number;
   precision: HazardReport["origin"]["precision"];
+  notify?: boolean;
 };
 
 export function rememberLocation(current: SavedLocation[], next: SavedLocation, limit = 5): SavedLocation[] {
-  const key = `${next.latitude.toFixed(5)},${next.longitude.toFixed(5)}`;
-  const rest = current.filter((item) => `${item.latitude.toFixed(5)},${item.longitude.toFixed(5)}` !== key);
-  return [next, ...rest].slice(0, limit);
+  const key = pointKey(next);
+  const previous = current.find((item) => pointKey(item) === key);
+  const stored: SavedLocation = {
+    label: next.label,
+    latitude: next.latitude,
+    longitude: next.longitude,
+    precision: next.precision,
+    notify: next.notify ?? previous?.notify ?? false,
+  };
+  const rest = current.filter((item) => pointKey(item) !== key);
+  return [stored, ...rest].slice(0, limit);
+}
+
+function pointKey(item: Pick<SavedLocation, "latitude" | "longitude">): string {
+  return `${item.latitude.toFixed(5)},${item.longitude.toFixed(5)}`;
 }

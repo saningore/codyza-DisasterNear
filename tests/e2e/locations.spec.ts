@@ -67,7 +67,7 @@ async function openZip(page: import("@playwright/test").Page, zip: string) {
     return;
   }
   const empty = page.getByText("No matching active alerts were returned by the sources checked.");
-  const cards = page.locator("article[data-alert='active']");
+  const cards = page.locator("article[data-alert='active'], article[data-alert='zone']");
   if (await empty.count()) {
     await expect(empty).toBeVisible();
   } else {

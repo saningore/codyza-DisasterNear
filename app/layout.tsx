@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Atkinson_Hyperlegible, Fraunces } from "next/font/google";
 import Link from "next/link";
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import { CALL_911, NOT_GOVERNMENT, NO_GUARANTEE } from "@/lib/copy";
 import "./globals.css";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -20,12 +21,15 @@ const serif = Fraunces({
 export const metadata: Metadata = {
   title: { default: "DisasterNear", template: "%s · DisasterNear" },
   description: "Check official National Weather Service alerts, USGS earthquakes, and FEMA disaster declarations for a U.S. location.",
+  manifest: "/manifest.webmanifest",
+  applicationName: "DisasterNear",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${sans.variable} ${serif.variable}`}>
       <body className="min-h-screen font-sans antialiased">
+        <ServiceWorkerRegister />
         <a className="skip-link" href="#main">Skip to content</a>
         <div className="bg-clay px-4 py-2 text-center text-sm font-bold text-white">{CALL_911}</div>
         <div className="bg-amber px-4 py-2 text-center text-sm">{NOT_GOVERNMENT}</div>
